@@ -10,12 +10,10 @@
 #---------------------build config-------------------------
 
 DEBUG_BUILD ?= 0
-EXTRA_CXXFLAGS ?=
-EXTRA_LDFLAGS ?=
+EXTRA_CXXFLAGS ?= -I/home/hank/.local/include/rocksdb
+EXTRA_LDFLAGS ?= -L/home/hank/.local/lib -lsnappy -lz -llz4 -lbz2 -lzstd -ldl
 
-BIND_LEVELDB ?= 0
-BIND_ROCKSDB ?= 0
-BIND_LMDB ?= 0
+BIND_ROCKSDB ?= 1
 
 #----------------------------------------------------------
 
@@ -26,22 +24,12 @@ else
 	CPPFLAGS += -DNDEBUG
 endif
 
-ifeq ($(BIND_LEVELDB), 1)
-	LDFLAGS += -lleveldb
-	SOURCES += $(wildcard leveldb/*.cc)
-endif
-
 ifeq ($(BIND_ROCKSDB), 1)
 	LDFLAGS += -lrocksdb
 	SOURCES += $(wildcard rocksdb/*.cc)
 endif
 
-ifeq ($(BIND_LMDB), 1)
-	LDFLAGS += -llmdb
-	SOURCES += $(wildcard lmdb/*.cc)
-endif
-
-CXXFLAGS += -std=c++11 -Wall -pthread $(EXTRA_CXXFLAGS) -I./
+CXXFLAGS += -std=c++17 -Wall -pthread $(EXTRA_CXXFLAGS) -I./
 LDFLAGS += $(EXTRA_LDFLAGS) -lpthread
 SOURCES += $(wildcard core/*.cc)
 OBJECTS += $(SOURCES:.cc=.o)
