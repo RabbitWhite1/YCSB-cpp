@@ -9,6 +9,7 @@
 #ifndef YCSB_C_CORE_WORKLOAD_H_
 #define YCSB_C_CORE_WORKLOAD_H_
 
+#include <iostream>
 #include <vector>
 #include <string>
 #include "db.h"
@@ -111,6 +112,12 @@ class CoreWorkload {
   ///
   static const std::string REQUEST_DISTRIBUTION_PROPERTY;
   static const std::string REQUEST_DISTRIBUTION_DEFAULT;
+
+  ///
+  /// Zipfian alpha if request_distribution is "zipfian".
+  ///
+  static const std::string REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_PROPERTY;
+  static const std::string REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_DEFAULT;
 
   ///
   /// The default zero padding value. Matches integer sort order
@@ -219,6 +226,7 @@ class CoreWorkload {
 inline uint64_t CoreWorkload::NextTransactionKeyNum() {
   uint64_t key_num;
   do {
+    // std::cout << "here1, key_num: " << key_num << std::endl;
     key_num = key_chooser_->Next();
   } while (key_num > transaction_insert_key_sequence_->Last());
   return key_num;

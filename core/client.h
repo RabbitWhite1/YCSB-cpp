@@ -9,6 +9,7 @@
 #ifndef YCSB_C_CLIENT_H_
 #define YCSB_C_CLIENT_H_
 
+#include <iostream>
 #include <string>
 #include "db.h"
 #include "core_workload.h"
@@ -18,7 +19,7 @@
 namespace ycsbc {
 
 inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops, bool is_loading,
-                        bool init_db, bool cleanup_db, CountDownLatch *latch) {
+                        bool init_db, bool cleanup_db, CountDownLatch *latch, std::promise<int> &return_promise) {
   if (init_db) {
     db->Init();
   }
@@ -37,6 +38,7 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
   }
 
   latch->CountDown();
+  return_promise.set_value(oks);
   return oks;
 }
 

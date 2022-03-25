@@ -5,6 +5,8 @@
 //  Copyright (c) 2020 Youngjae Lee <ls4154.lee@gmail.com>.
 //
 
+#include <iostream>
+
 #include "rocksdb_db.h"
 
 #include "core/core_workload.h"
@@ -274,9 +276,9 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
     if (val != 0) {
       opt->max_bytes_for_level_base = val;
     }
-    val = std::stoi(props.GetProperty(PROP_WRITE_BUFFER_SIZE, PROP_WRITE_BUFFER_SIZE_DEFAULT));
+    size_t write_buffer_size = std::stoul(props.GetProperty(PROP_WRITE_BUFFER_SIZE, PROP_WRITE_BUFFER_SIZE_DEFAULT));
     if (val != 0) {
-      opt->write_buffer_size = val;
+      opt->write_buffer_size = write_buffer_size;
     }
     val = std::stoi(props.GetProperty(PROP_MAX_WRITE_BUFFER, PROP_MAX_WRITE_BUFFER_DEFAULT));
     if (val != 0) {

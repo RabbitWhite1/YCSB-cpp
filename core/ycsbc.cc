@@ -16,6 +16,7 @@
 #include <future>
 #include <chrono>
 #include <iomanip>
+#include <sched.h>
 
 #include "utils.h"
 #include "timer.h"
@@ -93,19 +94,39 @@ int main(const int argc, const char *argv[]) {
       status_future = std::async(std::launch::async, StatusThread,
                                  &measurements, &latch, status_interval);
     }
-    std::vector<std::future<int>> client_threads;
+    // client threads
+    unsigned num_cpus = std::thread::hardware_concurrency();
+    assert(num_cpus >= 2*num_threads);
+    std::vector<std::promise<int>> client_return_promises;
+    std::vector<std::future<int>> client_return_futures;
+    for (int i = 0; i < num_threads; ++i) {
+      client_return_promises.emplace_back(std::promise<int>());
+    }
     for (int i = 0; i < num_threads; ++i) {
       int thread_ops = total_ops / num_threads;
       if (i < total_ops % num_threads) {
         thread_ops++;
       }
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
-                                             thread_ops, true, true, !do_transaction, &latch));
+      client_return_futures.emplace_back(client_return_promises[i].get_future());
+      // client_returns.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
+      //                                        thread_ops, true, true, !do_transaction, &latch, std::ref(return_promise)));
+      std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, 
+                                              true, true, !do_transaction, &latch, std::ref(client_return_promises[i]));
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(i*2, &cpuset);
+      int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
+      if (rc != 0) {
+        std::cerr << "trying to use cpu: " << i*2 << std::endl;
+        std::cerr << "num cpus: " << num_cpus << std::endl;
+        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+      }
+      client_thread.detach();
     }
-    assert((int)client_threads.size() == num_threads);
+    assert((int)client_return_futures.size() == num_threads);
 
     int sum = 0;
-    for (auto &n : client_threads) {
+    for (auto &n : client_return_futures) {
       assert(n.valid());
       sum += n.get();
     }
@@ -136,21 +157,40 @@ int main(const int argc, const char *argv[]) {
       status_future = std::async(std::launch::async, StatusThread,
                                  &measurements, &latch, status_interval);
     }
-    std::vector<std::future<int>> client_threads;
+    // client threads
+    unsigned num_cpus = std::thread::hardware_concurrency();
+    assert(num_cpus >= 2*num_threads);
+    std::vector<std::promise<int>> client_return_promises;
+    std::vector<std::future<int>> client_return_futures;
+    for (int i = 0; i < num_threads; ++i) {
+      client_return_promises.emplace_back(std::promise<int>());
+    }
     for (int i = 0; i < num_threads; ++i) {
       int thread_ops = total_ops / num_threads;
       if (i < total_ops % num_threads) {
         thread_ops++;
       }
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
-                                             thread_ops, false, !do_load, true,  &latch));
+      client_return_futures.emplace_back(client_return_promises[i].get_future());
+      // client_returns.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
+      //                                        thread_ops, false, !do_load, true,  &latch, std::ref(return_promise)));
+      std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, 
+                                              false, !do_load, true,  &latch, std::ref(client_return_promises[i]));
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(i*2, &cpuset);
+      int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
+      if (rc != 0) {
+        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+      }
+      client_thread.detach();
     }
-    assert((int)client_threads.size() == num_threads);
+    assert((int)client_return_futures.size() == num_threads);
+    std::cout << "threads started" << std::endl;
 
     int sum = 0;
-    for (auto &n : client_threads) {
+    for (auto &n : client_return_futures) {
       assert(n.valid());
-      sum += n.get();
+      sum += n.get();  
     }
     double runtime = timer.End();
 

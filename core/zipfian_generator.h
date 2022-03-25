@@ -9,6 +9,7 @@
 #ifndef YCSB_C_ZIPFIAN_GENERATOR_H_
 #define YCSB_C_ZIPFIAN_GENERATOR_H_
 
+#include <iostream>
 #include <cassert>
 #include <cmath>
 #include <cstdint>

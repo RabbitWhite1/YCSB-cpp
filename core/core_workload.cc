@@ -15,6 +15,7 @@
 #include "core_workload.h"
 #include "random_byte_generator.h"
 
+#include <iostream>
 #include <algorithm>
 #include <random>
 #include <string>
@@ -66,6 +67,9 @@ const string CoreWorkload::READMODIFYWRITE_PROPORTION_DEFAULT = "0.0";
 
 const string CoreWorkload::REQUEST_DISTRIBUTION_PROPERTY = "requestdistribution";
 const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
+
+const string CoreWorkload::REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_PROPERTY = "requestdistribution_zipfian_alpha";
+const string CoreWorkload::REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_DEFAULT = "0.99";
 
 const string CoreWorkload::ZERO_PADDING_PROPERTY = "zeropadding";
 const string CoreWorkload::ZERO_PADDING_DEFAULT = "1";
@@ -161,8 +165,11 @@ void CoreWorkload::Init(const utils::Properties &p) {
     // If the generator picks a key that is not inserted yet, we just ignore it
     // and pick another key.
     int op_count = std::stoi(p.GetProperty(OPERATION_COUNT_PROPERTY));
+    double zipfian_alpha = std::stod(p.GetProperty(REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_PROPERTY, 
+                                                  REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_DEFAULT));
+    std::cout << "using zipfian with alpha=" << zipfian_alpha << std::endl;
     int new_keys = (int)(op_count * insert_proportion * 2); // a fudge factor
-    key_chooser_ = new ScrambledZipfianGenerator(record_count_ + new_keys);
+    key_chooser_ = new ScrambledZipfianGenerator(record_count_ + new_keys, zipfian_alpha);
 
   } else if (request_dist == "latest") {
     key_chooser_ = new SkewedLatestGenerator(*transaction_insert_key_sequence_);
