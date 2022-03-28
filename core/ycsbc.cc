@@ -29,7 +29,7 @@
 void UsageMessage(const char *command);
 bool StrStartWith(const char *str, const char *pre);
 void ParseCommandLine(int argc, const char *argv[], ycsbc::utils::Properties &props);
-void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements,
+void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements, 
                    ycsbc::DB *status_db, const bool show_status, const int status_interval,
                    std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load);
 
@@ -38,6 +38,7 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
   time_point<system_clock> start = system_clock::now();
   bool done = false;
   db->Init();
+  
   while (1) {
     time_point<system_clock> now = system_clock::now();
     std::time_t now_c = system_clock::to_time_t(now);
@@ -56,6 +57,7 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
     }
     done = latch->AwaitFor(interval);
   }
+  db->Cleanup();
 }
 
 int main(const int argc, const char *argv[]) {
@@ -154,27 +156,20 @@ int main(const int argc, const char *argv[]) {
 
   // transaction phase
   if (do_transaction) {
-    // const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-    // const int total_warmup_ops = -1;
-    // DoTransaction(total_warmup_ops, num_threads, measurements, 
-    //               status_db, show_status, status_interval,
-    //               dbs, wl, do_load);
-    // printf("warmup done!");
-    // measurements.Reset();
-    // DoTransaction(total_ops, num_threads, measurements, 
-    //               status_db, show_status, status_interval,
-    //               dbs, wl, do_load);
-    DoTransaction(10000, num_threads, measurements, 
-                  status_db, /*show_status=*/true, status_interval,
+    const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
+    const int total_warmup_ops = -1;
+    DoTransaction(total_warmup_ops, num_threads, measurements, 
+                  status_db, show_status, status_interval,
+                  dbs, wl, do_load);
+    printf("warmup done!");
+    measurements.Reset();
+    DoTransaction(total_ops, num_threads, measurements, 
+                  status_db, show_status, status_interval,
                   dbs, wl, do_load);
   }
-  printf("Everything done! Clean up...\n");
-  for (int i = 0; i < num_threads; i++) {
+  for (int i = 0; i < num_threads + 1; i++) {
     delete dbs[i];
   }
-  printf("End.\n");
-  using namespace std::chrono_literals;
-  std::this_thread::sleep_for(2000ms);
 }
 
 void ParseCommandLine(int argc, const char *argv[], ycsbc::utils::Properties &props) {
@@ -276,8 +271,8 @@ inline bool StrStartWith(const char *str, const char *pre) {
   return strncmp(str, pre, strlen(pre)) == 0;
 }
 
-void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements,
-                   ycsbc::DB *status_db, const bool show_status, const int status_interval,
+void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements, 
+                   ycsbc::DB *status_db, const bool show_status, const int status_interval, 
                    std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load) {
   CountDownLatch latch(num_threads);
   ycsbc::utils::Timer<double> timer;
@@ -285,7 +280,7 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
   timer.Start();
   std::future<void> status_future;
   if (show_status) {
-    status_future = std::async(std::launch::async, StatusThread, status_db,
+    status_future = std::async(std::launch::async, StatusThread, status_db, 
                                 &measurements, &latch, status_interval);
   }
   std::cout << "started staus thread" << std::endl;
@@ -306,8 +301,8 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
       thread_ops = -1;
     }
     client_return_futures.emplace_back(client_return_promises[i].get_future());
-    std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops,
-                                            false, !do_load, true,  &latch, std::ref(client_return_promises[i]), i);
+    std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, false, 
+                                            !do_load, true,  &latch, std::ref(client_return_promises[i]), i);
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(i*2, &cpuset);

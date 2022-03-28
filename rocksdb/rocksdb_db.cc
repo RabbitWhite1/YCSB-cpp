@@ -211,10 +211,7 @@ void RocksdbDB::Init() {
 
 void RocksdbDB::Cleanup() {
   const std::lock_guard<std::mutex> lock(mu_);
-  if (--ref_cnt_) {
-    return;
-  }
-  delete db_;
+  --ref_cnt_;
 }
 
 void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt,

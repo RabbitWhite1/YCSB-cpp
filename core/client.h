@@ -43,7 +43,7 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
     } else {
       oks += wl->DoTransaction(*db);
     }
-    if (i % 1000000 == 0 && num_ops == -1) {
+    if (i % 100000 == 0 && num_ops == -1) {
       float data_block_percent = 0;
       db->PrintDBStatusAndCacheStatus(&data_block_percent);
       if (data_block_percent > 95.0) {

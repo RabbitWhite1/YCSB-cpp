@@ -56,6 +56,10 @@
     "thread": "cpp",
     "cinttypes": "cpp",
     "typeinfo": "cpp",
-    "future": "cpp"
+    "future": "cpp",
+    "cwctype": "cpp",
+    "optional": "cpp",
+    "ranges": "cpp",
+    "sstream": "cpp"
   }
 }
