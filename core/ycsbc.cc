@@ -29,11 +29,15 @@
 void UsageMessage(const char *command);
 bool StrStartWith(const char *str, const char *pre);
 void ParseCommandLine(int argc, const char *argv[], ycsbc::utils::Properties &props);
+void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements,
+                   ycsbc::DB *status_db, const bool show_status, const int status_interval,
+                   std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load);
 
-void StatusThread(ycsbc::Measurements *measurements, CountDownLatch *latch, int interval) {
+void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLatch *latch, int interval) {
   using namespace std::chrono;
   time_point<system_clock> start = system_clock::now();
   bool done = false;
+  db->Init();
   while (1) {
     time_point<system_clock> now = system_clock::now();
     std::time_t now_c = system_clock::to_time_t(now);
@@ -43,12 +47,15 @@ void StatusThread(ycsbc::Measurements *measurements, CountDownLatch *latch, int 
               << static_cast<long long>(elapsed_time.count()) << " sec: ";
 
     std::cout << measurements->GetStatusMsg() << std::endl;
+    if (db != nullptr) {
+      db->PrintDBStatusAndCacheStatus(nullptr);
+    }
 
     if (done) {
       break;
     }
     done = latch->AwaitFor(interval);
-  };
+  }
 }
 
 int main(const int argc, const char *argv[]) {
@@ -66,7 +73,7 @@ int main(const int argc, const char *argv[]) {
 
   ycsbc::Measurements measurements;
   std::vector<ycsbc::DB *> dbs;
-  for (int i = 0; i < num_threads; i++) {
+  for (int i = 0; i < num_threads + 1; i++) {
     ycsbc::DB *db = ycsbc::DBFactory::CreateDB(&props, &measurements);
     if (db == nullptr) {
       std::cerr << "Unknown database name " << props["dbname"] << std::endl;
@@ -74,6 +81,7 @@ int main(const int argc, const char *argv[]) {
     }
     dbs.push_back(db);
   }
+  ycsbc::DB *status_db = dbs[num_threads];
 
   ycsbc::CoreWorkload wl;
   wl.Init(props);
@@ -91,7 +99,7 @@ int main(const int argc, const char *argv[]) {
     timer.Start();
     std::future<void> status_future;
     if (show_status) {
-      status_future = std::async(std::launch::async, StatusThread,
+      status_future = std::async(std::launch::async, StatusThread, status_db,
                                  &measurements, &latch, status_interval);
     }
     // client threads
@@ -111,7 +119,7 @@ int main(const int argc, const char *argv[]) {
       // client_returns.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
       //                                        thread_ops, true, true, !do_transaction, &latch, std::ref(return_promise)));
       std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, 
-                                              true, true, !do_transaction, &latch, std::ref(client_return_promises[i]));
+                                              true, true, !do_transaction, &latch, std::ref(client_return_promises[i]), i);
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
       CPU_SET(i*2, &cpuset);
@@ -146,66 +154,27 @@ int main(const int argc, const char *argv[]) {
 
   // transaction phase
   if (do_transaction) {
-    const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-
-    CountDownLatch latch(num_threads);
-    ycsbc::utils::Timer<double> timer;
-
-    timer.Start();
-    std::future<void> status_future;
-    if (show_status) {
-      status_future = std::async(std::launch::async, StatusThread,
-                                 &measurements, &latch, status_interval);
-    }
-    // client threads
-    unsigned num_cpus = std::thread::hardware_concurrency();
-    assert(num_cpus >= 2*num_threads);
-    std::vector<std::promise<int>> client_return_promises;
-    std::vector<std::future<int>> client_return_futures;
-    for (int i = 0; i < num_threads; ++i) {
-      client_return_promises.emplace_back(std::promise<int>());
-    }
-    for (int i = 0; i < num_threads; ++i) {
-      int thread_ops = total_ops / num_threads;
-      if (i < total_ops % num_threads) {
-        thread_ops++;
-      }
-      client_return_futures.emplace_back(client_return_promises[i].get_future());
-      // client_returns.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
-      //                                        thread_ops, false, !do_load, true,  &latch, std::ref(return_promise)));
-      std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, 
-                                              false, !do_load, true,  &latch, std::ref(client_return_promises[i]));
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      CPU_SET(i*2, &cpuset);
-      int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
-      if (rc != 0) {
-        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
-      }
-      client_thread.detach();
-    }
-    assert((int)client_return_futures.size() == num_threads);
-    std::cout << "threads started" << std::endl;
-
-    int sum = 0;
-    for (auto &n : client_return_futures) {
-      assert(n.valid());
-      sum += n.get();  
-    }
-    double runtime = timer.End();
-
-    if (show_status) {
-      status_future.wait();
-    }
-
-    std::cout << "Run runtime(sec): " << runtime << std::endl;
-    std::cout << "Run operations(ops): " << sum << std::endl;
-    std::cout << "Run throughput(ops/sec): " << sum / runtime << std::endl;
+    // const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
+    // const int total_warmup_ops = -1;
+    // DoTransaction(total_warmup_ops, num_threads, measurements, 
+    //               status_db, show_status, status_interval,
+    //               dbs, wl, do_load);
+    // printf("warmup done!");
+    // measurements.Reset();
+    // DoTransaction(total_ops, num_threads, measurements, 
+    //               status_db, show_status, status_interval,
+    //               dbs, wl, do_load);
+    DoTransaction(10000, num_threads, measurements, 
+                  status_db, /*show_status=*/true, status_interval,
+                  dbs, wl, do_load);
   }
-
+  printf("Everything done! Clean up...\n");
   for (int i = 0; i < num_threads; i++) {
     delete dbs[i];
   }
+  printf("End.\n");
+  using namespace std::chrono_literals;
+  std::this_thread::sleep_for(2000ms);
 }
 
 void ParseCommandLine(int argc, const char *argv[], ycsbc::utils::Properties &props) {
@@ -307,3 +276,62 @@ inline bool StrStartWith(const char *str, const char *pre) {
   return strncmp(str, pre, strlen(pre)) == 0;
 }
 
+void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements,
+                   ycsbc::DB *status_db, const bool show_status, const int status_interval,
+                   std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load) {
+  CountDownLatch latch(num_threads);
+  ycsbc::utils::Timer<double> timer;
+
+  timer.Start();
+  std::future<void> status_future;
+  if (show_status) {
+    status_future = std::async(std::launch::async, StatusThread, status_db,
+                                &measurements, &latch, status_interval);
+  }
+  std::cout << "started staus thread" << std::endl;
+  // client threads
+  unsigned num_cpus = std::thread::hardware_concurrency();
+  assert(num_cpus >= 2*num_threads);
+  std::vector<std::promise<int>> client_return_promises;
+  std::vector<std::future<int>> client_return_futures;
+  for (int i = 0; i < num_threads; ++i) {
+    client_return_promises.emplace_back(std::promise<int>());
+  }
+  for (int i = 0; i < num_threads; ++i) {
+    int thread_ops = total_ops / num_threads;
+    if (i < total_ops % num_threads) {
+      thread_ops++;
+    }
+    if (total_ops == -1) {
+      thread_ops = -1;
+    }
+    client_return_futures.emplace_back(client_return_promises[i].get_future());
+    std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops,
+                                            false, !do_load, true,  &latch, std::ref(client_return_promises[i]), i);
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(i*2, &cpuset);
+    int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+      std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    }
+    client_thread.detach();
+  }
+  assert((int)client_return_futures.size() == num_threads);
+  std::cout << "threads started" << std::endl;
+
+  int sum = 0;
+  for (auto &n : client_return_futures) {
+    assert(n.valid());
+    sum += n.get();  
+  }
+  double runtime = timer.End();
+
+  if (show_status) {
+    status_future.wait();
+  }
+
+  std::cout << "Run runtime(sec): " << runtime << std::endl;
+  std::cout << "Run operations(ops): " << sum << std::endl;
+  std::cout << "Run throughput(ops/sec): " << sum / runtime << std::endl;
+}

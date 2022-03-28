@@ -50,6 +50,40 @@ class RocksdbDB : public DB {
     return (this->*(method_delete_))(table, key);
   }
 
+  void PrintDBStatusAndCacheStatus(float* data_block_percent) {
+    // std::map<std::string, std::string> cache_status;
+    // db_->GetMapProperty(rocksdb::DB::Properties::kBlockCacheEntryStats, &cache_status);
+    // if (data_block_percent == nullptr) {
+    //   std::cout << "Block cache entry stats(count,bytes,percent): "
+    //     << "DataBlock(" 
+    //     << cache_status["count.data-block"] << "," 
+    //     << cache_status["bytes.data-block"] << "," 
+    //     << cache_status["percent.data-block"] << ") " 
+    //     << "Misc(" 
+    //     << cache_status["count.misc"] << ","
+    //     << cache_status["bytes.misc"] << ","
+    //     << cache_status["percent.misc"] << ") "
+    //     << "FilterBlock(" 
+    //     << cache_status["count.filter-block"] << ","
+    //     << cache_status["bytes.filter-block"] << ","
+    //     << cache_status["percent.filter-block"] << ") "
+    //     << "IndexBlock(" 
+    //     << cache_status["count.index-block"] << ","
+    //     << cache_status["bytes.index-block"] << ","
+    //     << cache_status["percent.index-block"] << ") " << std::endl;
+
+    //   std::cout << "Block cache " 
+    //     << cache_status["id"] << " " 
+    //     << "capacity: " << cache_status["capacity"] << std::endl;
+    // } else {
+    //   *data_block_percent = std::stof(cache_status["percent.data-block"]);
+    // }
+
+    // for (auto &it : cache_status) {
+    //   std::cout << it.first << ": " << it.second << std::endl;
+    // }
+  }
+
  private:
   enum RocksFormat {
     kSingleRow,

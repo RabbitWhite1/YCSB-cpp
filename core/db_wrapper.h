@@ -67,6 +67,14 @@ class DBWrapper : public DB {
     measurements_->Report(DELETE, elapsed);
     return s;
   }
+  void PrintDBStatusAndCacheStatus(float *data_block_percent) {
+    db_->PrintDBStatusAndCacheStatus(data_block_percent);
+  }
+  void FinishWarmup() {
+    warmup_ = false;
+    measurements_->Reset();
+  }
+
  private:
   DB *db_;
   Measurements *measurements_;

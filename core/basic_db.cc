@@ -81,6 +81,12 @@ DB::Status BasicDB::Delete(const std::string &table, const std::string &key) {
   return kOK;
 }
 
+void BasicDB::PrintDBStatusAndCacheStatus(float *data_block_percent) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  cout << "DB Status: " << endl;
+  cout << "Cache Status: " << endl;
+}
+
 DB *NewBasicDB() {
   return new BasicDB;
 }
