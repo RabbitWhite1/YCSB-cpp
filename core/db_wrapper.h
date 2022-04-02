@@ -67,8 +67,8 @@ class DBWrapper : public DB {
     measurements_->Report(DELETE, elapsed);
     return s;
   }
-  void PrintDBStatusAndCacheStatus(float *data_block_percent) {
-    db_->PrintDBStatusAndCacheStatus(data_block_percent);
+  void GetOrPrintDBStatus(std::map<std::string, std::string> *status_map) {
+    db_->GetOrPrintDBStatus(status_map);
   }
   void FinishWarmup() {
     warmup_ = false;

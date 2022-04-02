@@ -20,7 +20,8 @@
 namespace ycsbc {
 
 inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops, bool is_loading,
-                        bool init_db, bool cleanup_db, CountDownLatch *latch, std::promise<int> &return_promise, int thread_id) {
+                        bool init_db, bool cleanup_db, CountDownLatch *latch, std::promise<int> &return_promise, int thread_id,
+                        bool* has_warmup_done) {
   // Parameters:
   //    db: The database to use.
   //    wl: The workload to use.
@@ -28,7 +29,7 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
   if (init_db) {
     db->Init();
   }
-
+  // db->GetOrPrintDBStatus(nullptr);
   int oks = 0;
   int using_num_ops = num_ops;
   if (num_ops == -1) {
@@ -37,18 +38,15 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
   if (thread_id == 0) {
     printf("num_ops: %d, using_num_ops: %d\n", num_ops, using_num_ops);
   }
+  
   for (int i = 0; i < using_num_ops; ++i) {
     if (is_loading) {
       oks += wl->DoInsert(*db);
     } else {
       oks += wl->DoTransaction(*db);
     }
-    if (i % 100000 == 0 && num_ops == -1) {
-      float data_block_percent = 0;
-      db->PrintDBStatusAndCacheStatus(&data_block_percent);
-      if (data_block_percent > 95.0) {
-        break;
-      }
+    if (has_warmup_done != nullptr && *has_warmup_done == true) {
+      break;
     }
   }
 

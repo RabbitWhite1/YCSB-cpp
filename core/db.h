@@ -100,7 +100,7 @@ class DB {
   ///
   virtual Status Delete(const std::string &table, const std::string &key) = 0;
 
-  virtual void PrintDBStatusAndCacheStatus(float *data_block_percent) = 0;
+  virtual void GetOrPrintDBStatus(std::map<std::string, std::string> *status_map) = 0;
 
   virtual ~DB() { }
 

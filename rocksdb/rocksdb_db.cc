@@ -20,6 +20,7 @@
 #include <rocksdb/status.h>
 #include <rocksdb/utilities/options_util.h>
 #include <rocksdb/write_batch.h>
+#include <rocksdb/statistics.h>
 
 namespace {
   const std::string PROP_NAME = "rocksdb.dbname";
@@ -327,6 +328,11 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
     if (props.GetProperty(PROP_OPTIMIZE_LEVELCOMP, PROP_OPTIMIZE_LEVELCOMP_DEFAULT) == "true") {
       opt->OptimizeLevelStyleCompaction();
     }
+
+    // statistics
+    std::shared_ptr<rocksdb::Statistics> statistics = rocksdb::CreateDBStatistics();
+    statistics->set_stats_level(rocksdb::StatsLevel::kExceptHistogramOrTimers);
+    opt->statistics = statistics;
   }
 }
 
