@@ -42,6 +42,7 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
   int stable_times = 0;
   float prev_hit_ratio = 0.0;
   float mv_hit_ratio = 0.0;
+  printf("Status thread start.\n");
   
   while (1) {
     time_point<system_clock> now = system_clock::now();
@@ -58,11 +59,13 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
     std::map<std::string, std::string> status_map;
     if (has_warmup_done != nullptr and *has_warmup_done == false) {
       db->GetOrPrintDBStatus(&status_map);
-      float current_hit_ratio = std::stof(status_map["block_cache.hit_ratio"]);
+      float current_hit_ratio = std::stof(status_map["block_cache_hit_ratio"]);
       if (std::isnan(current_hit_ratio)) {
+        // still need to wait so that it won't output too many times.
+        latch->AwaitFor(interval);
         continue;
       }
-      if (std::abs(current_hit_ratio - mv_hit_ratio) <= 0.2) {
+      if (std::abs(current_hit_ratio - mv_hit_ratio) <= 0.05) {
         ++stable_times;
       } else {
         stable_times = 0;
@@ -70,7 +73,7 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
       printf("mv_hit_ratio=%.4f%%, prev_hit_ratio=%.4f%%, current_hit_ratio=%.4f%%, stable_times=%d\n", mv_hit_ratio, prev_hit_ratio, current_hit_ratio, stable_times);
       mv_hit_ratio = (mv_hit_ratio + current_hit_ratio) / 2;
       prev_hit_ratio = current_hit_ratio;
-      if (stable_times >= 6) {
+      if (stable_times >= 7) {
         *has_warmup_done = true;
         break;
       }
@@ -191,6 +194,9 @@ int main(const int argc, const char *argv[]) {
     measurements.Reset();
     printf("measurements reset! %s\n", measurements.GetStatusMsg().c_str());
     printf("Start doing the required transactions!");
+    printf("Press any key to continue...\n");
+    fflush(stdout);
+    getchar();
     DoTransaction(total_ops, num_threads, measurements, 
                   status_db, show_status, status_interval,
                   dbs, wl, do_load);

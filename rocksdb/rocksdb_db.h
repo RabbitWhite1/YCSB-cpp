@@ -61,9 +61,12 @@ class RocksdbDB : public DB {
     db_->GetMapProperty(rocksdb::DB::Properties::kBlockCacheEntryStats, &cache_status);
     std::shared_ptr<rocksdb::Statistics> statistics = db_->GetOptions().statistics;
 
-    uint64_t hit_count = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_HIT);
-    uint64_t miss_count = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_MISS);
-    double hit_ratio = (double)hit_count / (hit_count + miss_count) * 100;
+    uint64_t block_cache_data_hit = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_HIT);
+    uint64_t block_cache_data_miss = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_MISS);
+    double block_cache_hit_ratio = (double)block_cache_data_hit / (block_cache_data_hit + block_cache_data_miss) * 100;
+    uint64_t memtable_hit = statistics->getTickerCount(rocksdb::MEMTABLE_HIT);
+    uint64_t memtable_miss = statistics->getTickerCount(rocksdb::MEMTABLE_MISS);
+    double memtable_hit_ratio = (double)memtable_hit / (memtable_hit + memtable_miss) * 100;
 
     if (status_map == nullptr) {
       printf("Block cache entry stats(count,bytes,percent): "
@@ -71,14 +74,22 @@ class RocksdbDB : public DB {
              cache_status["count.data-block"].c_str(), cache_status["bytes.data-block"].c_str(), cache_status["percent.data-block"].c_str(),
              cache_status["count.index-block"].c_str(), cache_status["bytes.index-block"].c_str(), cache_status["percent.index-block"].c_str(),
              cache_status["count.filter-block"].c_str(), cache_status["bytes.filter-block"].c_str(), cache_status["percent.filter-block"].c_str(),
-             cache_status["count.other"].c_str(), cache_status["bytes.other"].c_str(), cache_status["percent.other"].c_str());
+             cache_status["count.misc"].c_str(), cache_status["bytes.misc"].c_str(), cache_status["percent.misc"].c_str());
       printf("Block cache %s capacity: %s\n", cache_status["id"].c_str(), cache_status["capacity"].c_str());
-      printf("block cache hit ratio: %lu/%lu = %.2lf%%\n", hit_count, hit_count+miss_count, hit_ratio);
+      printf("block cache hit ratio: %lu/%lu = %.2lf%%\n", 
+             block_cache_data_hit, block_cache_data_hit+block_cache_data_miss, block_cache_hit_ratio);
+      printf("memtable hit ratio: %lu/%lu = %.2lf%%\n", 
+             memtable_hit, memtable_hit+memtable_miss, memtable_hit_ratio);
     } else {
-      (*status_map)["data_block_percent"] = cache_status["percent.data-block"];
-      (*status_map)["block_cache.hit_ratio"] = std::to_string(hit_ratio);
-      (*status_map)["block_cache.hit_count"] = std::to_string(hit_count);
-      (*status_map)["block_cache.miss_count"] = std::to_string(miss_count);
+      // block cache
+      (*status_map)["block_cache_data_percent"] = cache_status["percent.data-block"];
+      (*status_map)["block_cache_data_hit"] = std::to_string(block_cache_data_hit);
+      (*status_map)["block_cache_data_miss"] = std::to_string(block_cache_data_miss);
+      (*status_map)["block_cache_hit_ratio"] = std::to_string(block_cache_hit_ratio);
+      // memtable
+      (*status_map)["memtable_hit"] = std::to_string(memtable_hit);
+      (*status_map)["memtable_miss"] = std::to_string(memtable_miss);
+      (*status_map)["memtable_hit_ratio"] = std::to_string(memtable_hit_ratio);
     }
   }
 
