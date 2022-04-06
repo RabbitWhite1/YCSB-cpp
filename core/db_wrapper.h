@@ -67,8 +67,8 @@ class DBWrapper : public DB {
     measurements_->Report(DELETE, elapsed);
     return s;
   }
-  void GetOrPrintDBStatus(std::map<std::string, std::string> *status_map) {
-    db_->GetOrPrintDBStatus(status_map);
+  void GetOrPrintDBStatus(std::map<std::string, std::string> *status_map, bool should_print, bool reset_stats) {
+    db_->GetOrPrintDBStatus(status_map, should_print, reset_stats);
   }
   void FinishWarmup() {
     warmup_ = false;

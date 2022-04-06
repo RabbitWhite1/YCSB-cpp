@@ -34,7 +34,7 @@ class BasicDB : public DB {
 
   Status Delete(const std::string &table, const std::string &key);
 
-  void GetOrPrintDBStatus(std::map<std::string, std::string> *status_map);
+  void GetOrPrintDBStatus(std::map<std::string, std::string> *status_map, bool should_print, bool reset_stats);
 
  private:
   static std::mutex mutex_;

@@ -56,19 +56,30 @@ class RocksdbDB : public DB {
     return (this->*(method_delete_))(table, key);
   }
 
-  void GetOrPrintDBStatus(std::map<std::string, std::string>* status_map) {
+  void GetOrPrintDBStatus(std::map<std::string, std::string>* status_map, bool should_print, bool reset_stats) {
     std::map<std::string, std::string> cache_status;
+    assert(db_ != nullptr);
     db_->GetMapProperty(rocksdb::DB::Properties::kBlockCacheEntryStats, &cache_status);
+
     std::shared_ptr<rocksdb::Statistics> statistics = db_->GetOptions().statistics;
+    uint64_t block_cache_hit, block_cache_miss;
+    uint64_t block_cache_data_hit, block_cache_data_miss;
+    uint64_t memtable_hit, memtable_miss;
+    double block_cache_hit_ratio, block_cache_data_hit_ratio, memtable_hit_ratio;
+    if (statistics != nullptr) {
+      block_cache_hit = statistics->getTickerCount(rocksdb::BLOCK_CACHE_HIT);
+      block_cache_miss = statistics->getTickerCount(rocksdb::BLOCK_CACHE_MISS);
+      block_cache_hit_ratio = (double)block_cache_hit / (block_cache_hit + block_cache_miss) * 100;
+      block_cache_data_hit = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_HIT);
+      block_cache_data_miss = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_MISS);
+      block_cache_data_hit_ratio = (double)block_cache_data_hit / (block_cache_data_hit + block_cache_data_miss) * 100;
+      memtable_hit = statistics->getTickerCount(rocksdb::MEMTABLE_HIT);
+      memtable_miss = statistics->getTickerCount(rocksdb::MEMTABLE_MISS);
+      memtable_hit_ratio = (double)memtable_hit / (memtable_hit + memtable_miss) * 100;
+    }
 
-    uint64_t block_cache_data_hit = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_HIT);
-    uint64_t block_cache_data_miss = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_MISS);
-    double block_cache_hit_ratio = (double)block_cache_data_hit / (block_cache_data_hit + block_cache_data_miss) * 100;
-    uint64_t memtable_hit = statistics->getTickerCount(rocksdb::MEMTABLE_HIT);
-    uint64_t memtable_miss = statistics->getTickerCount(rocksdb::MEMTABLE_MISS);
-    double memtable_hit_ratio = (double)memtable_hit / (memtable_hit + memtable_miss) * 100;
-
-    if (status_map == nullptr) {
+    // try to print stats
+    if (should_print) {
       printf("Block cache entry stats(count,bytes,percent): "
              "DataBlock(%s, %s, %s), IndexBlock(%s, %s, %s), FilterBlock(%s, %s, %s), Misc(%s, %s, %s)\n",
              cache_status["count.data-block"].c_str(), cache_status["bytes.data-block"].c_str(), cache_status["percent.data-block"].c_str(),
@@ -76,20 +87,38 @@ class RocksdbDB : public DB {
              cache_status["count.filter-block"].c_str(), cache_status["bytes.filter-block"].c_str(), cache_status["percent.filter-block"].c_str(),
              cache_status["count.misc"].c_str(), cache_status["bytes.misc"].c_str(), cache_status["percent.misc"].c_str());
       printf("Block cache %s capacity: %s\n", cache_status["id"].c_str(), cache_status["capacity"].c_str());
-      printf("block cache hit ratio: %lu/%lu = %.2lf%%\n", 
-             block_cache_data_hit, block_cache_data_hit+block_cache_data_miss, block_cache_hit_ratio);
-      printf("memtable hit ratio: %lu/%lu = %.2lf%%\n", 
-             memtable_hit, memtable_hit+memtable_miss, memtable_hit_ratio);
-    } else {
+      if (statistics != nullptr) {
+        printf("block cache hit ratio: %lu/%lu = %.2lf%%\n", 
+              block_cache_hit, block_cache_hit+block_cache_miss, block_cache_hit_ratio);
+        printf("block cache data hit ratio: %lu/%lu = %.2lf%%\n", 
+              block_cache_data_hit, block_cache_data_hit+block_cache_data_miss, block_cache_data_hit_ratio);
+        printf("memtable hit ratio: %lu/%lu = %.2lf%%\n", 
+              memtable_hit, memtable_hit+memtable_miss, memtable_hit_ratio);
+      }
+    }
+    // try to return stats
+    if (status_map != nullptr) {
       // block cache
       (*status_map)["block_cache_data_percent"] = cache_status["percent.data-block"];
-      (*status_map)["block_cache_data_hit"] = std::to_string(block_cache_data_hit);
-      (*status_map)["block_cache_data_miss"] = std::to_string(block_cache_data_miss);
-      (*status_map)["block_cache_hit_ratio"] = std::to_string(block_cache_hit_ratio);
+      if (statistics != nullptr) {
+        (*status_map)["block_cache_hit"] = std::to_string(block_cache_hit);
+        (*status_map)["block_cache_miss"] = std::to_string(block_cache_miss);
+        (*status_map)["block_cache_hit_ratio"] = std::to_string(block_cache_hit_ratio);
+        (*status_map)["block_cache_data_hit"] = std::to_string(block_cache_data_hit);
+        (*status_map)["block_cache_data_miss"] = std::to_string(block_cache_data_miss);
+        (*status_map)["block_cache_data_hit_ratio"] = std::to_string(block_cache_data_hit_ratio);
+      }
       // memtable
-      (*status_map)["memtable_hit"] = std::to_string(memtable_hit);
-      (*status_map)["memtable_miss"] = std::to_string(memtable_miss);
-      (*status_map)["memtable_hit_ratio"] = std::to_string(memtable_hit_ratio);
+      if (statistics != nullptr) {
+        (*status_map)["memtable_hit"] = std::to_string(memtable_hit);
+        (*status_map)["memtable_miss"] = std::to_string(memtable_miss);
+        (*status_map)["memtable_hit_ratio"] = std::to_string(memtable_hit_ratio);
+      }
+    }
+    // try to reset stats
+    if (statistics != nullptr and reset_stats) {
+      statistics->Reset();
+      printf("Reset statistics.\n");
     }
   }
 

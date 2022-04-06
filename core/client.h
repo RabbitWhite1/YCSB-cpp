@@ -29,7 +29,7 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
   if (init_db) {
     db->Init();
   }
-  // db->GetOrPrintDBStatus(nullptr);
+  
   int oks = 0;
   int using_num_ops = num_ops;
   if (num_ops == -1) {

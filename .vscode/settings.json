@@ -60,6 +60,7 @@
     "cwctype": "cpp",
     "optional": "cpp",
     "ranges": "cpp",
-    "sstream": "cpp"
+    "sstream": "cpp",
+    "iomanip": "cpp"
   }
 }

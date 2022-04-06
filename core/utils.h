@@ -58,7 +58,9 @@ inline char RandomPrintChar() {
 
 class Exception : public std::exception {
  public:
-  Exception(const std::string &message) : message_(message) { }
+  Exception(const std::string &message) : message_(message) {
+    printf("Exception: %s\n", message_.c_str());
+  }
   const char* what() const noexcept {
     return message_.c_str();
   }

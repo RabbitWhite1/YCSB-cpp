@@ -31,16 +31,17 @@ bool StrStartWith(const char *str, const char *pre);
 void ParseCommandLine(int argc, const char *argv[], ycsbc::utils::Properties &props);
 void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements, 
                    ycsbc::DB *status_db, const bool show_status, const int status_interval,
-                   std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load);
+                   std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load, const bool is_warmup);
 
-void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLatch *latch, int interval, bool *has_warmup_done) {
+void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLatch *latch, int interval, 
+                  bool *has_warmup_done, bool reset_stats) {
   using namespace std::chrono;
   time_point<system_clock> start = system_clock::now();
   bool done = false;
-  db->Init();
 
   int stable_times = 0;
   float prev_hit_ratio = 0.0;
+  float prev_mv_hit_ratio = 0.0;
   float mv_hit_ratio = 0.0;
   printf("Status thread start.\n");
   
@@ -49,33 +50,35 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
     std::time_t now_c = system_clock::to_time_t(now);
     duration<double> elapsed_time = now - start;
 
-    std::cout << std::put_time(std::localtime(&now_c), "%F %T") << ' '
-              << static_cast<long long>(elapsed_time.count()) << " sec: ";
+    char time_str[100];
+    std::strftime(time_str, sizeof(time_str), "%F %T", std::localtime(&now_c));
+    printf("\033[1;32m%s\033[0m %lld sec: %s\n", 
+           time_str, static_cast<long long>(elapsed_time.count()), measurements->GetStatusMsg().c_str());
 
-    std::cout << measurements->GetStatusMsg() << std::endl;
     if (db != nullptr) {
-      db->GetOrPrintDBStatus(nullptr);
-    }
-    std::map<std::string, std::string> status_map;
-    if (has_warmup_done != nullptr and *has_warmup_done == false) {
-      db->GetOrPrintDBStatus(&status_map);
-      float current_hit_ratio = std::stof(status_map["block_cache_hit_ratio"]);
-      if (std::isnan(current_hit_ratio)) {
-        // still need to wait so that it won't output too many times.
-        latch->AwaitFor(interval);
-        continue;
-      }
-      if (std::abs(current_hit_ratio - mv_hit_ratio) <= 0.05) {
-        ++stable_times;
-      } else {
-        stable_times = 0;
-      }
-      printf("mv_hit_ratio=%.4f%%, prev_hit_ratio=%.4f%%, current_hit_ratio=%.4f%%, stable_times=%d\n", mv_hit_ratio, prev_hit_ratio, current_hit_ratio, stable_times);
-      mv_hit_ratio = (mv_hit_ratio + current_hit_ratio) / 2;
-      prev_hit_ratio = current_hit_ratio;
-      if (stable_times >= 7) {
-        *has_warmup_done = true;
-        break;
+      db->GetOrPrintDBStatus(nullptr, /*should_print=*/true, /*reset_stats=*/false);
+      if (has_warmup_done != nullptr and *has_warmup_done == false) {
+        std::map<std::string, std::string> status_map;
+        db->GetOrPrintDBStatus(&status_map, /*should_print=*/false, /*reset_stats=*/true);
+        float current_hit_ratio = std::stof(status_map["block_cache_hit_ratio"]);
+        if (std::isnan(current_hit_ratio)) {
+          // still need to wait so that it won't output too many times.
+          latch->AwaitFor(interval);
+          continue;
+        }
+        if (std::abs(current_hit_ratio - mv_hit_ratio) <= 3) {
+          ++stable_times;
+        } else {
+          stable_times = 0;
+        }
+        printf("mv_hit_ratio=%.4f%%, prev_hit_ratio=%.4f%%, current_hit_ratio=%.4f%%, delta_hit_ratio=%.4f%%, stable_times=%d\n", mv_hit_ratio, prev_hit_ratio, current_hit_ratio, std::abs(current_hit_ratio - mv_hit_ratio), stable_times);
+        prev_mv_hit_ratio = mv_hit_ratio;
+        mv_hit_ratio = (mv_hit_ratio + current_hit_ratio) / 2;
+        prev_hit_ratio = current_hit_ratio;
+        if (stable_times >= 7) {
+          *has_warmup_done = true;
+          break;
+        }
       }
     }
 
@@ -84,7 +87,6 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
     }
     done = latch->AwaitFor(interval);
   }
-  db->Cleanup();
 }
 
 int main(const int argc, const char *argv[]) {
@@ -111,12 +113,13 @@ int main(const int argc, const char *argv[]) {
     dbs.push_back(db);
   }
   ycsbc::DB *status_db = dbs[num_threads];
+  status_db->Init();
 
   ycsbc::CoreWorkload wl;
   wl.Init(props);
 
   const bool show_status = (props.GetProperty("status", "false") == "true");
-  const int status_interval = std::stoi(props.GetProperty("status.interval", "10"));
+  const int status_interval = std::stoi(props.GetProperty("status.interval", "15"));
 
   // load phase
   if (do_load) {
@@ -129,11 +132,11 @@ int main(const int argc, const char *argv[]) {
     std::future<void> status_future;
     if (show_status) {
       status_future = std::async(std::launch::async, StatusThread, status_db,
-                                 &measurements, &latch, status_interval, /*is_warmup=*/nullptr);
+                                 &measurements, &latch, status_interval, /*has_warmup_done=*/nullptr, /*reset_stats=*/true);
     }
     // client threads
     unsigned num_cpus = std::thread::hardware_concurrency();
-    assert(num_cpus >= 2*num_threads);
+    assert(num_cpus >= num_threads);
     std::vector<std::promise<int>> client_return_promises;
     std::vector<std::future<int>> client_return_futures;
     for (int i = 0; i < num_threads; ++i) {
@@ -145,17 +148,16 @@ int main(const int argc, const char *argv[]) {
         thread_ops++;
       }
       client_return_futures.emplace_back(client_return_promises[i].get_future());
-      // client_returns.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
-      //                                        thread_ops, true, true, !do_transaction, &latch, std::ref(return_promise)));
-      std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, 
-                                              true, true, !do_transaction, &latch, std::ref(client_return_promises[i]), i,
-                                              nullptr);
+      std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, /*is_loading=*/true, 
+                                              /*init_db=*/true, /*cleanup_db=*/!do_transaction, &latch, std::ref(client_return_promises[i]), i,
+                                              /*has_warmup_done=*/nullptr);
+      int cpu_to_use = i;
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
-      CPU_SET(i*2, &cpuset);
+      CPU_SET(cpu_to_use, &cpuset);
       int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
       if (rc != 0) {
-        std::cerr << "trying to use cpu: " << i*2 << std::endl;
+        std::cerr << "trying to use cpu: " << cpu_to_use << std::endl;
         std::cerr << "num cpus: " << num_cpus << std::endl;
         std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
       }
@@ -185,22 +187,24 @@ int main(const int argc, const char *argv[]) {
   // transaction phase
   if (do_transaction) {
     const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-    // const int total_warmup_ops = total_ops * 10;
-    const int total_warmup_ops = -1;
+    const int total_warmup_ops = 20000000;
+    // const int total_warmup_ops = -1;
+    printf("Warmup starts! Total warmup ops: %d; %s\n", total_warmup_ops, measurements.GetStatusMsg().c_str());
     DoTransaction(total_warmup_ops, num_threads, measurements, 
                   status_db, show_status, status_interval,
-                  dbs, wl, do_load);
+                  dbs, wl, do_load, /*is_warmup=*/true);
     printf("Warmup done! %s\n", measurements.GetStatusMsg().c_str());
     measurements.Reset();
     printf("measurements reset! %s\n", measurements.GetStatusMsg().c_str());
-    printf("Start doing the required transactions!");
-    printf("Press any key to continue...\n");
+    printf("\033[1;31mStart doing the required transactions!\033[0m\n");
+    // printf("Press any key to continue...\n");
     fflush(stdout);
-    getchar();
+    // getchar();
     DoTransaction(total_ops, num_threads, measurements, 
                   status_db, show_status, status_interval,
-                  dbs, wl, do_load);
+                  dbs, wl, do_load, /*is_warmup=*/false);
   }
+  status_db->Cleanup();
   for (int i = 0; i < num_threads + 1; i++) {
     delete dbs[i];
   }
@@ -307,7 +311,7 @@ inline bool StrStartWith(const char *str, const char *pre) {
 
 void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measurements &measurements, 
                    ycsbc::DB *status_db, const bool show_status, const int status_interval, 
-                   std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load) {
+                   std::vector<ycsbc::DB *> &dbs, ycsbc::CoreWorkload &wl, const bool do_load, const bool is_warmup) {
   CountDownLatch latch(num_threads);
   ycsbc::utils::Timer<double> timer;
 
@@ -315,36 +319,41 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
   std::future<void> status_future;
   bool* has_warmup_done = nullptr;
   if (total_ops == -1) {
+    if (not is_warmup) {
+      std::cerr << "total_ops is -1, but is_warmup is false" << std::endl;
+    }
     has_warmup_done = new bool(false);
   }
   if (show_status) {
+    bool reset_stats = is_warmup;
     status_future = std::async(std::launch::async, StatusThread, status_db, 
-                               &measurements, &latch, status_interval, has_warmup_done);
+                               &measurements, &latch, status_interval, has_warmup_done, reset_stats);
   }
   std::cout << "started staus thread" << std::endl;
   // client threads
   unsigned num_cpus = std::thread::hardware_concurrency();
-  assert(num_cpus >= 2*num_threads);
+  // assert(num_cpus >= 2*num_threads);
   std::vector<std::promise<int>> client_return_promises;
   std::vector<std::future<int>> client_return_futures;
   for (int i = 0; i < num_threads; ++i) {
     client_return_promises.emplace_back(std::promise<int>());
   }
   for (int i = 0; i < num_threads; ++i) {
-    int thread_ops = total_ops / num_threads;
-    if (i < total_ops % num_threads) {
-      thread_ops++;
-    }
-    if (total_ops == -1) {
-      thread_ops = -1;
+    int thread_ops = -1;
+    if (total_ops != -1) {
+      thread_ops = total_ops / num_threads;
+      if (i < total_ops % num_threads) {
+        thread_ops++;
+      }
     }
     client_return_futures.emplace_back(client_return_promises[i].get_future());
     std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, /*is_loading=*/false, 
                                             /*init_db=*/true, /*cleanup_db=*/true,  &latch, std::ref(client_return_promises[i]), i,
                                             has_warmup_done);
+    int cpu_to_use = i;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(i*2, &cpuset);
+    CPU_SET(cpu_to_use, &cpuset);
     int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     if (rc != 0) {
       std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
@@ -352,7 +361,7 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
     client_thread.detach();
   }
   assert((int)client_return_futures.size() == num_threads);
-  std::cout << "threads started" << std::endl;
+  printf("Client threads started\n");
 
   int sum = 0;
   for (auto &n : client_return_futures) {
