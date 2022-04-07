@@ -64,8 +64,9 @@ class RocksdbDB : public DB {
     std::shared_ptr<rocksdb::Statistics> statistics = db_->GetOptions().statistics;
     uint64_t block_cache_hit, block_cache_miss;
     uint64_t block_cache_data_hit, block_cache_data_miss;
+    uint64_t block_cache_compression_dict_hit, block_cache_compression_dict_miss;
     uint64_t memtable_hit, memtable_miss;
-    double block_cache_hit_ratio, block_cache_data_hit_ratio, memtable_hit_ratio;
+    double block_cache_hit_ratio, block_cache_data_hit_ratio, block_cache_compression_dict_hit_ratio, memtable_hit_ratio;
     if (statistics != nullptr) {
       block_cache_hit = statistics->getTickerCount(rocksdb::BLOCK_CACHE_HIT);
       block_cache_miss = statistics->getTickerCount(rocksdb::BLOCK_CACHE_MISS);
@@ -73,6 +74,9 @@ class RocksdbDB : public DB {
       block_cache_data_hit = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_HIT);
       block_cache_data_miss = statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_MISS);
       block_cache_data_hit_ratio = (double)block_cache_data_hit / (block_cache_data_hit + block_cache_data_miss) * 100;
+      block_cache_compression_dict_hit = statistics->getTickerCount(rocksdb::BLOCK_CACHE_COMPRESSION_DICT_HIT);
+      block_cache_compression_dict_miss = statistics->getTickerCount(rocksdb::BLOCK_CACHE_COMPRESSION_DICT_MISS);
+      block_cache_compression_dict_hit_ratio = (double)block_cache_compression_dict_hit / (block_cache_compression_dict_hit + block_cache_compression_dict_miss) * 100;
       memtable_hit = statistics->getTickerCount(rocksdb::MEMTABLE_HIT);
       memtable_miss = statistics->getTickerCount(rocksdb::MEMTABLE_MISS);
       memtable_hit_ratio = (double)memtable_hit / (memtable_hit + memtable_miss) * 100;
@@ -92,8 +96,18 @@ class RocksdbDB : public DB {
               block_cache_hit, block_cache_hit+block_cache_miss, block_cache_hit_ratio);
         printf("block cache data hit ratio: %lu/%lu = %.2lf%%\n", 
               block_cache_data_hit, block_cache_data_hit+block_cache_data_miss, block_cache_data_hit_ratio);
+        printf("block cache compression dict hit ratio: %lu/%lu = %.2lf%%\n", 
+              block_cache_compression_dict_hit, block_cache_compression_dict_hit+block_cache_compression_dict_miss, block_cache_compression_dict_hit_ratio);
         printf("memtable hit ratio: %lu/%lu = %.2lf%%\n", 
               memtable_hit, memtable_hit+memtable_miss, memtable_hit_ratio);
+        printf("block cache add: %lu\n", statistics->getTickerCount(rocksdb::BLOCK_CACHE_ADD));
+        printf("block cache data add: %lu\n", statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_ADD));
+        // printf("%s\n", statistics->getHistogramString(rocksdb::DB_GET).c_str());
+        // printf("%s\n", statistics->getHistogramString(rocksdb::DB_WRITE).c_str());
+        // printf("%s\n", statistics->getHistogramString(rocksdb::READ_BLOCK_COMPACTION_MICROS).c_str());
+        // printf("%s\n", statistics->getHistogramString(rocksdb::READ_BLOCK_GET_MICROS).c_str());
+        // printf("%s\n", statistics->getHistogramString(rocksdb::WRITE_STALL).c_str());
+        // printf("%s\n", statistics->getHistogramString(rocksdb::COMPACTION_TIME).c_str());
       }
     }
     // try to return stats

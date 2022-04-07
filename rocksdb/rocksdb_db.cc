@@ -77,6 +77,9 @@ namespace {
   const std::string PROP_CACHE_SIZE = "rocksdb.cache_size";
   const std::string PROP_CACHE_SIZE_DEFAULT = "0";
 
+  const std::string PROP_TABLE_CACHE_NUMSHARDBITS = "rocksdb.table_cache_numshardbits";
+  const std::string PROP_TABLE_CACHE_NUMSHARDBITS_DEFAULT = "6";
+
   const std::string PROP_COMPRESSED_CACHE_SIZE = "rocksdb.compressed_cache_size";
   const std::string PROP_COMPRESSED_CACHE_SIZE_DEFAULT = "0";
 
@@ -306,15 +309,29 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
 
     rocksdb::BlockBasedTableOptions table_options;
     size_t cache_size = std::stoul(props.GetProperty(PROP_CACHE_SIZE, PROP_CACHE_SIZE_DEFAULT));
+    int table_cache_numshardbits = std::stoi(props.GetProperty(PROP_TABLE_CACHE_NUMSHARDBITS, 
+                                                               PROP_TABLE_CACHE_NUMSHARDBITS_DEFAULT));
     if (cache_size > 0) {
-      block_cache = rocksdb::NewLRUCache(cache_size);
+      rocksdb::LRUCacheOptions cache_opts;
+      cache_opts.capacity = cache_size;
+      cache_opts.num_shard_bits = table_cache_numshardbits;
+      block_cache = rocksdb::NewLRUCache(cache_opts);
       table_options.block_cache = block_cache;
+    } else {
+      // need to disable block cache
+      table_options.no_block_cache = true;
     }
-    size_t compressed_cache_size = std::stoul(props.GetProperty(PROP_CACHE_SIZE,
-                                                                PROP_CACHE_SIZE_DEFAULT));
+    size_t compressed_cache_size = std::stoul(props.GetProperty(PROP_COMPRESSED_CACHE_SIZE,
+                                                                PROP_COMPRESSED_CACHE_SIZE_DEFAULT));
+                                                                
     if (compressed_cache_size > 0) {
-      block_cache_compressed = rocksdb::NewLRUCache(cache_size);
-      table_options.block_cache_compressed = rocksdb::NewLRUCache(compressed_cache_size);
+      rocksdb::LRUCacheOptions cache_opts;
+      cache_opts.capacity = compressed_cache_size;
+      cache_opts.num_shard_bits = table_cache_numshardbits;
+      block_cache_compressed = rocksdb::NewLRUCache(cache_opts);
+      table_options.block_cache_compressed = block_cache_compressed;
+    } else {
+      table_options.block_cache_compressed = nullptr;
     }
     int bloom_bits = std::stoul(props.GetProperty(PROP_BLOOM_BITS, PROP_BLOOM_BITS_DEFAULT));
     if (bloom_bits > 0) {

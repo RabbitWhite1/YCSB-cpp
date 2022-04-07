@@ -119,7 +119,7 @@ int main(const int argc, const char *argv[]) {
   wl.Init(props);
 
   const bool show_status = (props.GetProperty("status", "false") == "true");
-  const int status_interval = std::stoi(props.GetProperty("status.interval", "15"));
+  const int status_interval = std::stoi(props.GetProperty("status.interval", "10"));
 
   // load phase
   if (do_load) {
@@ -150,7 +150,7 @@ int main(const int argc, const char *argv[]) {
       client_return_futures.emplace_back(client_return_promises[i].get_future());
       std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, /*is_loading=*/true, 
                                               /*init_db=*/true, /*cleanup_db=*/!do_transaction, &latch, std::ref(client_return_promises[i]), i,
-                                              /*has_warmup_done=*/nullptr);
+                                              /*is_warmup=*/false, /*has_warmup_done=*/nullptr);
       int cpu_to_use = i;
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
@@ -187,7 +187,7 @@ int main(const int argc, const char *argv[]) {
   // transaction phase
   if (do_transaction) {
     const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-    const int total_warmup_ops = 20000000;
+    const int total_warmup_ops = 80000000;
     // const int total_warmup_ops = -1;
     printf("Warmup starts! Total warmup ops: %d; %s\n", total_warmup_ops, measurements.GetStatusMsg().c_str());
     DoTransaction(total_warmup_ops, num_threads, measurements, 
@@ -197,7 +197,7 @@ int main(const int argc, const char *argv[]) {
     measurements.Reset();
     printf("measurements reset! %s\n", measurements.GetStatusMsg().c_str());
     printf("\033[1;31mStart doing the required transactions!\033[0m\n");
-    // printf("Press any key to continue...\n");
+    printf("Press any key to continue...\n");
     fflush(stdout);
     // getchar();
     DoTransaction(total_ops, num_threads, measurements, 
@@ -332,7 +332,6 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
   std::cout << "started staus thread" << std::endl;
   // client threads
   unsigned num_cpus = std::thread::hardware_concurrency();
-  // assert(num_cpus >= 2*num_threads);
   std::vector<std::promise<int>> client_return_promises;
   std::vector<std::future<int>> client_return_futures;
   for (int i = 0; i < num_threads; ++i) {
@@ -349,11 +348,11 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
     client_return_futures.emplace_back(client_return_promises[i].get_future());
     std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, /*is_loading=*/false, 
                                             /*init_db=*/true, /*cleanup_db=*/true,  &latch, std::ref(client_return_promises[i]), i,
-                                            has_warmup_done);
+                                            /*is_warmup=*/has_warmup_done != nullptr, has_warmup_done);
     int cpu_to_use = i;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(cpu_to_use, &cpuset);
+    CPU_SET(cpu_to_use*2, &cpuset);
     int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     if (rc != 0) {
       std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";

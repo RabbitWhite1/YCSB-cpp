@@ -21,7 +21,7 @@ namespace ycsbc {
 
 inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops, bool is_loading,
                         bool init_db, bool cleanup_db, CountDownLatch *latch, std::promise<int> &return_promise, int thread_id,
-                        bool* has_warmup_done) {
+                        bool is_warmup, bool* has_warmup_done) {
   // Parameters:
   //    db: The database to use.
   //    wl: The workload to use.
@@ -45,7 +45,7 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
     } else {
       oks += wl->DoTransaction(*db);
     }
-    if (has_warmup_done != nullptr && *has_warmup_done == true) {
+    if (is_warmup && has_warmup_done != nullptr && *has_warmup_done == true) {
       break;
     }
   }
