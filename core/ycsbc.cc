@@ -55,6 +55,11 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
     printf("\033[1;32m%s\033[0m %lld sec: %s\n", 
            time_str, static_cast<long long>(elapsed_time.count()), measurements->GetStatusMsg().c_str());
 
+    if (done) {
+      break;
+    }
+    done = latch->AwaitFor(interval);
+
     if (db != nullptr) {
       db->GetOrPrintDBStatus(nullptr, /*should_print=*/true, /*reset_stats=*/false);
       if (has_warmup_done != nullptr and *has_warmup_done == false) {
@@ -81,11 +86,6 @@ void StatusThread(ycsbc::DB *db, ycsbc::Measurements *measurements, CountDownLat
         }
       }
     }
-
-    if (done) {
-      break;
-    }
-    done = latch->AwaitFor(interval);
   }
 }
 
@@ -187,19 +187,19 @@ int main(const int argc, const char *argv[]) {
   // transaction phase
   if (do_transaction) {
     const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-    const int total_warmup_ops = 80000000;
-    // const int total_warmup_ops = -1;
+    const int total_warmup_ops = total_ops * 5;
     printf("Warmup starts! Total warmup ops: %d; %s\n", total_warmup_ops, measurements.GetStatusMsg().c_str());
     DoTransaction(total_warmup_ops, num_threads, measurements, 
                   status_db, show_status, status_interval,
                   dbs, wl, do_load, /*is_warmup=*/true);
     printf("Warmup done! %s\n", measurements.GetStatusMsg().c_str());
     measurements.Reset();
+    status_db->GetOrPrintDBStatus(nullptr, /*should_print=*/false, /*reset_stats=*/true);
     printf("measurements reset! %s\n", measurements.GetStatusMsg().c_str());
     printf("\033[1;31mStart doing the required transactions!\033[0m\n");
     printf("Press any key to continue...\n");
     fflush(stdout);
-    // getchar();
+    getchar();
     DoTransaction(total_ops, num_threads, measurements, 
                   status_db, show_status, status_interval,
                   dbs, wl, do_load, /*is_warmup=*/false);
@@ -318,10 +318,7 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
   timer.Start();
   std::future<void> status_future;
   bool* has_warmup_done = nullptr;
-  if (total_ops == -1) {
-    if (not is_warmup) {
-      std::cerr << "total_ops is -1, but is_warmup is false" << std::endl;
-    }
+  if (is_warmup) {
     has_warmup_done = new bool(false);
   }
   if (show_status) {
@@ -338,12 +335,9 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
     client_return_promises.emplace_back(std::promise<int>());
   }
   for (int i = 0; i < num_threads; ++i) {
-    int thread_ops = -1;
-    if (total_ops != -1) {
-      thread_ops = total_ops / num_threads;
-      if (i < total_ops % num_threads) {
-        thread_ops++;
-      }
+    int thread_ops = total_ops / num_threads;
+    if (i < total_ops % num_threads) {
+      thread_ops++;
     }
     client_return_futures.emplace_back(client_return_promises[i].get_future());
     std::thread client_thread = std::thread(ycsbc::ClientThread, dbs[i], &wl, thread_ops, /*is_loading=*/false, 
@@ -352,7 +346,7 @@ void DoTransaction(const int total_ops, const int num_threads, ycsbc::Measuremen
     int cpu_to_use = i;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(cpu_to_use*2, &cpuset);
+    CPU_SET(cpu_to_use, &cpuset);
     int rc = pthread_setaffinity_np(client_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     if (rc != 0) {
       std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";

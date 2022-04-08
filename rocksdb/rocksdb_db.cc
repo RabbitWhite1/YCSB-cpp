@@ -312,10 +312,7 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
     int table_cache_numshardbits = std::stoi(props.GetProperty(PROP_TABLE_CACHE_NUMSHARDBITS, 
                                                                PROP_TABLE_CACHE_NUMSHARDBITS_DEFAULT));
     if (cache_size > 0) {
-      rocksdb::LRUCacheOptions cache_opts;
-      cache_opts.capacity = cache_size;
-      cache_opts.num_shard_bits = table_cache_numshardbits;
-      block_cache = rocksdb::NewLRUCache(cache_opts);
+      block_cache = rocksdb::NewLRUCache(cache_size, table_cache_numshardbits, false);
       table_options.block_cache = block_cache;
     } else {
       // need to disable block cache
@@ -325,10 +322,7 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
                                                                 PROP_COMPRESSED_CACHE_SIZE_DEFAULT));
                                                                 
     if (compressed_cache_size > 0) {
-      rocksdb::LRUCacheOptions cache_opts;
-      cache_opts.capacity = compressed_cache_size;
-      cache_opts.num_shard_bits = table_cache_numshardbits;
-      block_cache_compressed = rocksdb::NewLRUCache(cache_opts);
+      block_cache = rocksdb::NewLRUCache(cache_size, table_cache_numshardbits, false);
       table_options.block_cache_compressed = block_cache_compressed;
     } else {
       table_options.block_cache_compressed = nullptr;
@@ -348,7 +342,7 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
 
     // statistics
     std::shared_ptr<rocksdb::Statistics> statistics = rocksdb::CreateDBStatistics();
-    statistics->set_stats_level(rocksdb::StatsLevel::kExceptHistogramOrTimers);
+    statistics->set_stats_level(rocksdb::StatsLevel::kAll);
     opt->statistics = statistics;
   }
 }
@@ -417,7 +411,9 @@ DB::Status RocksdbDB::ReadSingle(const std::string &table, const std::string &ke
                                  const std::vector<std::string> *fields,
                                  std::vector<Field> &result) {
   std::string data;
-  rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &data);
+  rocksdb::ReadOptions read_options = rocksdb::ReadOptions();
+  // read_options.fill_cache = false;
+  rocksdb::Status s = db_->Get(read_options, key, &data);
   if (s.IsNotFound()) {
     return kNotFound;
   } else if (!s.ok()) {

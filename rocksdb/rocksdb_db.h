@@ -102,7 +102,9 @@ class RocksdbDB : public DB {
               memtable_hit, memtable_hit+memtable_miss, memtable_hit_ratio);
         printf("block cache add: %lu\n", statistics->getTickerCount(rocksdb::BLOCK_CACHE_ADD));
         printf("block cache data add: %lu\n", statistics->getTickerCount(rocksdb::BLOCK_CACHE_DATA_ADD));
-        // printf("%s\n", statistics->getHistogramString(rocksdb::DB_GET).c_str());
+        printf("%s\n", statistics->getHistogramString(rocksdb::DB_GET).c_str());
+        // printf("%s\n", statistics->getHistogramString(rocksdb::COMPACTION_TIME).c_str());
+        
         // printf("%s\n", statistics->getHistogramString(rocksdb::DB_WRITE).c_str());
         // printf("%s\n", statistics->getHistogramString(rocksdb::READ_BLOCK_COMPACTION_MICROS).c_str());
         // printf("%s\n", statistics->getHistogramString(rocksdb::READ_BLOCK_GET_MICROS).c_str());

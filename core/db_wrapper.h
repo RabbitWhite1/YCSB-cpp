@@ -20,9 +20,11 @@ namespace ycsbc {
 
 class DBWrapper : public DB {
  public:
+  std::string *read_key = nullptr;
   DBWrapper(DB *db, Measurements *measurements) : db_(db), measurements_(measurements) {}
   ~DBWrapper() {
     delete db_;
+    delete read_key;
   }
   void Init() {
     db_->Init();
@@ -32,8 +34,11 @@ class DBWrapper : public DB {
   }
   Status Read(const std::string &table, const std::string &key,
               const std::vector<std::string> *fields, std::vector<Field> &result) {
+    if (read_key == nullptr) {
+      read_key = new std::string(key);
+    }
     timer_.Start();
-    Status s = db_->Read(table, key, fields, result);
+    Status s = db_->Read(table, *read_key, fields, result);
     uint64_t elapsed = timer_.End();
     measurements_->Report(READ, elapsed);
     return s;

@@ -167,7 +167,7 @@ void CoreWorkload::Init(const utils::Properties &p) {
     int op_count = std::stoi(p.GetProperty(OPERATION_COUNT_PROPERTY));
     double zipfian_alpha = std::stod(p.GetProperty(REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_PROPERTY, 
                                                   REQUEST_DISTRIBUTION_ZIPFIAN_ALPHA_DEFAULT));
-    std::cout << "using zipfian with alpha=" << zipfian_alpha << std::endl;
+    printf("using zipfiain alpha %f\n", zipfian_alpha);
     int new_keys = (int)(op_count * insert_proportion * 2); // a fudge factor
     key_chooser_ = new ScrambledZipfianGenerator(record_count_ + new_keys, zipfian_alpha);
 
